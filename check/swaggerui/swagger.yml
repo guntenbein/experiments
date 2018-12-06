@@ -1,0 +1,238 @@
+swagger: "2.0"
+info:
+  title: Document microservice
+  description: Microservice is used for saving and searching files in a storage.
+  version: 0.1.9
+basePath: /
+schemes:
+- http
+host: 'localhost:5685'
+produces:
+- application/json
+paths:
+  /v1/documents:
+    post:
+      summary: Upload file into cloud storage
+      description: Bearer token validates company_uuid & uuid_uid provided as query params
+      security:
+      - bearer: []
+      tags:
+      - DocumentService
+      operationId: UploadFile(fileName, companyID, createdBy string, data io.Reader) (*DocumentMetadata, error)
+      consumes:
+      - multipart/form-data
+      parameters:
+      - in: formData
+        name: fileName
+        description: The file name to be set
+        required: true
+        type: string
+      - in: formData
+        name: file
+        description: The file to be uploaded
+        required: true
+        type: file
+      - in: header
+        name: Authorization
+        required: true
+        type: string
+        default: 'Bearer {{bearer}}'
+      - in: query
+        name: companyId
+        description: Company ID
+        required: true
+        type: string
+      - in: query
+        name: userId
+        description: Created By
+        required: true
+        type: string
+      responses:
+        201:
+          description: Created
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        400:
+          description: bad request - missing fields or validation failed
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        401:
+          description: not authorized - bad jwt token, bad signature of jwt token, missing company id or creator id
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        500:
+          description: internal server error
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+    get:
+      summary: Find files by its name and company ID with different search strategies
+      description: company ID is required and taken from JWT bearer token
+      tags:
+      - DocumentService
+      operationId: FindFile(fileName, companyID string) (*DocumentMetadata, error)
+      security:
+      - bearer: []
+      parameters:
+      - name: fileName
+        in: query
+        required: false
+        description: The name of the file to find. Used with exact or default search strategy.
+        type: string
+      - in: header
+        name: Authorization
+        required: true
+        type: string
+        default: 'Bearer {{bearer}}'
+      - in: header
+        name: Search-Strategy
+        description: Search strategy used to extract documents. ['ilike', 'exact', 'id_array']
+        required: true
+        type: string
+        default: 'ilike'
+      - in: query
+        name: companyId
+        description: Company ID
+        required: true
+        type: string
+      - in: query
+        required: false
+        description: ID used in case of 'id_array' search strategy.
+        name: id
+        type: string
+        minimum: 1
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        400:
+          description: bad request - missing fields
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        401:
+          description: not authorsed - bad jwt token, bad signature of jwt token, missing company id or creator id
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        404:
+          description: document with this file name cannot be found
+        500:
+          description: internal server error
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+
+  /v1/documents/{uuid}:
+    parameters:
+    - name: uuid
+      in: path
+      required: true
+      description: The uuid of the file
+      type: string
+    get:
+      summary: Find file by its uuid
+      description: Company ID is taken from JWT bearer token for validation purposes
+      security:
+      - bearer: []
+      tags:
+      - DocumentService
+      operationId: GetFile(uuid, companyID string) (*DocumentMetadata, error)
+      parameters:
+      - in: header
+        name: Authorization
+        required: true
+        type: string
+        default: 'Bearer {{bearer}}'
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        400:
+          description: bad request - missing fields
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        401:
+          description: not authorized - bad jwt token, bad signature of jwt token, missing company id, incorrect company_id for this file
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        404:
+          description: document with this uuid cannot be found
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+        500:
+          description: internal server error
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+
+  /healthcheck:
+    get:
+      summary: Checks service life status
+      description: Support health checking with consul service discovery system
+      tags:
+      - DocumentService
+      operationId: HealthCheck() bool
+      responses:
+        200:
+          description: Ok
+        500:
+          description: internal server error
+          schema:
+            $ref: "#/definitions/ResponseDocumentMetadata"
+definitions:
+  ResponseDocumentMetadata:
+    type: object
+    properties:
+      meta:
+        type: object
+        properties:
+          errors:
+            type: array
+            items:
+              type: object
+              properties:
+                err:
+                  type: string
+                  description: the message of the error
+                code:
+                  description: the code of the error originating the source
+                  type: string
+          actions:
+            type: array
+            items:
+              type: string
+      data:
+        type: array
+        items:
+          type: object
+          properties:
+            url:
+              type: string
+              description: the URL - public accesss URL where the file can be downloaded
+            id:
+              type: string
+              description: the UUID of the document
+            fileName:
+              type: string
+              description: the name of the file
+            mimeType:
+              type: string
+              description: the mime type of the document
+            createdAt:
+              type: integer
+              description: the timestamp of the creation of the file (nanoseconds)
+            companyId:
+              type: integer
+              description: the id of the company to which the file belongs to
+            createdBy:
+              type: integer
+              description: the id of the user-creator of the file
+securityDefinitions:
+  bearer:
+    description: Supported 2 variants -> Service and Default token.
+    type: apiKey
+    name: Authorization
+    in: header
+tags:
+- name: DocumentService
+  description: Document service rest api operations
+security:
+- bearer: []
