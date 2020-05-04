@@ -6,3 +6,5 @@ require (
 	github.com/onsi/gomega v1.4.3 // indirect
 	github.com/pkg/errors v0.8.0
 )
+
+go 1.13
