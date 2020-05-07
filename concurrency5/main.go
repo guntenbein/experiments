@@ -1,6 +1,7 @@
 package main
 
 import (
+	"awesomeProject/errworker"
 	"fmt"
 	"sync"
 )
@@ -36,23 +37,29 @@ func main() {
 	}()
 
 	ff := []Figure{
-		Figure{1, 2, -5, 0, 0},
+		Figure{1, 2, 5, 0, 0},
 		Figure{3, 2, 4, 0, 0},
 		Figure{1, 10, 3, 0, 0},
 		Figure{1, 10, -3, 0, 0},
-		Figure{-1, 10, 3, 0, 0},
-		Figure{1, 10, 3, 0, 0}}
+		Figure{1, -10, 3, 0, 0},
+		Figure{1, 10, 5, 0, 0}}
 
 	squarec := make(chan Figure, n)
 
 	volumec := make(chan Figure, n)
 
 	go func() {
-		computeSquare(ff, squarec, errc)
+		if err := computeSquare(ff, squarec); err != nil {
+			errc <- err
+		}
+		close(squarec)
 	}()
 
 	go func() {
-		computeVolume(squarec, volumec, errc)
+		if err := computeVolume(squarec, volumec); err != nil {
+			errc <- err
+		}
+		close(volumec)
 	}()
 
 	send(volumec, errc)
@@ -61,31 +68,38 @@ func main() {
 	errGroup.Wait()
 }
 
-func computeSquare(ff []Figure, squarec chan<- Figure, errc chan<- error) {
+func computeSquare(ff []Figure, squarec chan<- Figure) error {
+	ew := errworker.NewErrWorkgroup(2, true)
 	for _, f := range ff {
-		if f.Length <= 0 || f.Width <= 0 {
-			errc <- fmt.Errorf("invalid length or width value, should be positive non-zero, length: %d, width: %d", f.Length, f.Width)
-		}
-		f.Square = f.Length * f.Width
-		squarec <- f
+		fClosure := f
+		ew.Go(func() error {
+			if fClosure.Length <= 0 || fClosure.Width <= 0 {
+				return fmt.Errorf("invalid length or width value, should be positive non-zero, length: %d, width: %d", fClosure.Length, fClosure.Width)
+			}
+			fClosure.Square = fClosure.Length * fClosure.Width
+			squarec <- fClosure
+			return nil
+		})
 	}
-	close(squarec)
+	return ew.Wait()
 }
 
-func computeVolume(squarec <-chan Figure, volumec chan<- Figure, errc chan<- error) {
+func computeVolume(squarec <-chan Figure, volumec chan<- Figure) error {
+	ew := errworker.NewErrWorkgroup(3, true)
 	var err error
 	for f := range squarec {
-		if f.Height <= 0 {
-			err = fmt.Errorf("invalid height value, should be positive non-zero, height: %d", f.Height)
-			errc <- err
-		}
-		// skip if error happens during previous figure calculation
-		if err == nil {
-			f.Volume = f.Square * f.Height
-			volumec <- f
-		}
+		fClosure := f
+		ew.Go(func() error {
+			if fClosure.Height <= 0 {
+				err = fmt.Errorf("invalid height value, should be positive non-zero, height: %d", fClosure.Height)
+				return err
+			}
+			fClosure.Volume = fClosure.Square * fClosure.Height
+			volumec <- fClosure
+			return nil
+		})
 	}
-	close(volumec)
+	return ew.Wait()
 }
 
 func send(sourcec <-chan Figure, errc chan<- error) {
@@ -93,7 +107,7 @@ func send(sourcec <-chan Figure, errc chan<- error) {
 	count := 0
 	batch := make([]Figure, 0, n)
 	for f := range sourcec {
-		if f.Volume > 25 {
+		if f.Volume > 40 {
 			err = fmt.Errorf("cannot send figures with volume more than 25, volume: %d", f.Volume)
 			errc <- err
 		}
